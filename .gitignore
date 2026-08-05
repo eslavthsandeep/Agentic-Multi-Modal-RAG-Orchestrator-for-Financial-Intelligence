@@ -1,0 +1,27 @@
+# Python & Environment
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+backend/.env
+.venv
+venv/
+ENV/
+
+# Data & Databases
+backend/data/stock.db
+backend/data/qdrant_db/
+backend/data/uploads/
+backend/data/extracted_images/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test & Cache
+.pytest_cache/
+.coverage
+htmlcov/

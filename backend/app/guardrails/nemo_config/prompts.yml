@@ -1,0 +1,19 @@
+prompts:
+  - task: self_check_input
+    content: |
+      You are evaluating a user query for a financial document analysis system.
+      Is this question related to the financial document analysis context?
+      
+      Query: {{ user_input }}
+      
+      Respond with "yes" if it is related, or "no" if it is off-topic (like sports, cooking, personal advice).
+
+  - task: self_check_output
+    content: |
+      You are evaluating an AI-generated answer.
+      Is this answer grounded in the provided context, or does it contain unsupported claims?
+      
+      Context: {{ context }}
+      Answer: {{ bot_response }}
+      
+      Respond with "yes" if the answer is completely grounded in the context, or "no" if it makes up facts.

@@ -1,0 +1,28 @@
+define user ask about cooking
+  "How do I bake a cake?"
+  "What is the recipe for pasta?"
+  "Tell me about cooking"
+
+define user ask about sports
+  "Who won the game?"
+  "What is the score?"
+  "Tell me about football"
+
+define user ask personal advice
+  "What should I do with my life?"
+  "Can you give me relationship advice?"
+
+define bot refuse off topic
+  "I am an AI assistant designed to analyze financial documents. I cannot answer questions about topics unrelated to finance or the uploaded document."
+
+define flow handle off topic
+  user ask about cooking
+  bot refuse off topic
+
+define flow handle sports
+  user ask about sports
+  bot refuse off topic
+
+define flow handle personal advice
+  user ask personal advice
+  bot refuse off topic
