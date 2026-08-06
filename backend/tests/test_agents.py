@@ -85,36 +85,36 @@ class TestSupervisorRouting:
 
     @patch("app.agents.supervisor.openai")
     def test_routes_stock_question_to_sql(self, mock_openai_module):
-        from app.agents.supervisor import run_supervisor
+        from app.agents.supervisor import supervisor_node
 
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = self._make_mock_llm_response("sql")
-        mock_openai_module.Client.return_value = mock_client
+        mock_openai_module.OpenAI.return_value = mock_client
 
         state = self._build_state("What was AAPL's average closing price in 2023?")
-        result = run_supervisor(state)
+        result = supervisor_node(state)
         assert result.goto == "sql_agent"
 
     @patch("app.agents.supervisor.openai")
     def test_routes_chart_question_to_vision(self, mock_openai_module):
-        from app.agents.supervisor import run_supervisor
+        from app.agents.supervisor import supervisor_node
 
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = self._make_mock_llm_response("vision")
-        mock_openai_module.Client.return_value = mock_client
+        mock_openai_module.OpenAI.return_value = mock_client
 
         state = self._build_state("What does the revenue bar chart on page 15 show?")
-        result = run_supervisor(state)
+        result = supervisor_node(state)
         assert result.goto == "vision_agent"
 
     @patch("app.agents.supervisor.openai")
     def test_routes_text_question_to_search(self, mock_openai_module):
-        from app.agents.supervisor import run_supervisor
+        from app.agents.supervisor import supervisor_node
 
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = self._make_mock_llm_response("search")
-        mock_openai_module.Client.return_value = mock_client
+        mock_openai_module.OpenAI.return_value = mock_client
 
         state = self._build_state("Summarize the risk factors section")
-        result = run_supervisor(state)
+        result = supervisor_node(state)
         assert result.goto == "search_agent"

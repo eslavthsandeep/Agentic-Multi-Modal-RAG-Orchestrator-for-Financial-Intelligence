@@ -6,18 +6,27 @@ from __future__ import annotations
 import logging
 import os
 
-from nemoguardrails import LLMRails, RailsConfig
+try:
+    from nemoguardrails import LLMRails, RailsConfig
+    NEMO_AVAILABLE = True
+except ImportError:
+    LLMRails = None
+    RailsConfig = None
+    NEMO_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
-_rails_instance: LLMRails | None = None
+_rails_instance = None
 _config_path = os.path.join(os.path.dirname(__file__), "nemo_config")
 
-def _get_rails() -> LLMRails | None:
+def _get_rails():
     """Load NeMo rails config. Cached after first call."""
     global _rails_instance
     if _rails_instance is not None:
         return _rails_instance
+    if not NEMO_AVAILABLE:
+        logger.info("NeMo Guardrails not installed; using built-in query validator")
+        return None
         
     try:
         config = RailsConfig.from_path(_config_path)
