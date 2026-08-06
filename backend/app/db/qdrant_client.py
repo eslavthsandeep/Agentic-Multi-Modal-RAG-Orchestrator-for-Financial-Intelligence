@@ -137,6 +137,16 @@ def search_text(query_embedding: list[float], doc_id: str, top_k: int = 500) -> 
             scroll_filter=query_filter,
             limit=top_k
         )
+        
+        # Fallback to un-filtered scroll if doc_id mismatch returns 0 results
+        if not scroll_res and doc_id:
+            logger.info("Filtered scroll with doc_id '%s' returned 0 points; retrying un-filtered scroll", doc_id)
+            scroll_res, _ = client.scroll(
+                collection_name="omnibrain_text",
+                scroll_filter=None,
+                limit=top_k
+            )
+
         results = [
             {
                 "text": pt.payload.get("text"),

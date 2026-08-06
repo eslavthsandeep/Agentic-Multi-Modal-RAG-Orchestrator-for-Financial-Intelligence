@@ -34,6 +34,14 @@ def _hybrid_rerank(query: str, items: list[dict]) -> list[dict]:
         if not all(w in stopwords for w in words[i:i+3]):
             phrases.append(trigram)
 
+    # Domain n-gram synonyms for key financial topics
+    if any(k in query_lower for k in ["gross margin", "margin"]):
+        phrases.extend(["gross margin", "margin percentage", "products gross margin", "services gross margin"])
+    if any(k in query_lower for k in ["doj", "department of justice", "lawsuit", "antitrust"]):
+        phrases.extend(["department of justice", "antitrust", "civil antitrust", "monopolization", "legal proceedings"])
+    if any(k in query_lower for k in ["repurchase", "repurchases", "buyback", "share repurchase"]):
+        phrases.extend(["common stock repurchased", "repurchased", "share repurchases", "stock repurchased"])
+
     reranked = []
     for item in items:
         text = (item.get("text") or item.get("image_path") or "").lower()
