@@ -83,9 +83,22 @@ def parse_pdf(pdf_path: str, images_output_dir: str) -> dict[str, list[dict[str,
                             cleaned_table = []
                             for row in table:
                                 cleaned_row = [str(cell).strip() if cell else "" for cell in row]
-                                cleaned_table.append(cleaned_row)
+                                if any(cleaned_row):  # keep non-empty rows
+                                    cleaned_table.append(cleaned_row)
                             
-                            text_representation = "\n".join([" | ".join(row) for row in cleaned_table])
+                            if not cleaned_table:
+                                continue
+
+                            # Render as explicit Markdown table representation
+                            header_row = cleaned_table[0]
+                            markdown_rows = [
+                                "| " + " | ".join(header_row) + " |",
+                                "| " + " | ".join(["---"] * len(header_row)) + " |"
+                            ]
+                            for row in cleaned_table[1:]:
+                                markdown_rows.append("| " + " | ".join(row) + " |")
+                            
+                            text_representation = "\n".join(markdown_rows)
                             
                             if text_representation.strip():
                                 tables_data.append({

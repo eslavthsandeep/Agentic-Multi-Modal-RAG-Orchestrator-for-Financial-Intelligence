@@ -1,8 +1,4 @@
-"""
-Chat UI components for Streamlit frontend.
-Handles rendering of messages with custom styles and routing tags.
-"""
-
+import re
 import streamlit as st
 
 def add_message(role: str, content: str, metadata: dict | None = None) -> dict:
@@ -12,6 +8,13 @@ def add_message(role: str, content: str, metadata: dict | None = None) -> dict:
         "content": content,
         "metadata": metadata or {}
     }
+
+def _safe_markdown_content(text: str) -> str:
+    """Escape unescaped dollar signs to prevent Streamlit KaTeX math-mode rendering collisions."""
+    if not text:
+        return ""
+    # Replace $ with \$ if not already escaped
+    return re.sub(r'(?<!\\)\$', r'\\$', text)
 
 def render_chat(messages: list[dict]) -> None:
     """Render the chat message history with styled bubbles."""
@@ -47,9 +50,10 @@ def render_chat(messages: list[dict]) -> None:
     
     for msg in messages:
         if msg["role"] == "user":
-            st.markdown(f'<div class="chat-bubble-user">{msg["content"]}</div>', unsafe_allow_html=True)
+            safe_text = _safe_markdown_content(msg["content"])
+            st.markdown(f'<div class="chat-bubble-user">{safe_text}</div>', unsafe_allow_html=True)
         else:
-            content = msg["content"]
+            content = _safe_markdown_content(msg["content"])
             metadata = msg.get("metadata", {})
             tags_html = ""
             if "route" in metadata:
