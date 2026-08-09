@@ -52,22 +52,40 @@ if "citations" not in st.session_state:
 if "trace" not in st.session_state:
     st.session_state.trace = []
 
-def check_system_status() -> dict:
-    urls_to_try = [f"{API_URL}/api/agents/status", "http://127.0.0.1:8000/api/agents/status", "http://localhost:8000/api/agents/status"]
-    for url in urls_to_try:
+def get_working_api_url() -> str:
+    urls_to_check = [
+        os.getenv("BACKEND_URL", ""),
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "https://omnibrain-api.loca.lt"
+    ]
+    for base in urls_to_check:
+        if not base:
+            continue
         try:
-            resp = requests.get(url, timeout=3)
-            if resp.status_code == 200:
-                return resp.json()
+            r = requests.get(f"{base}/api/agents/status", timeout=2)
+            if r.status_code == 200:
+                return base
         except Exception:
             continue
+    return "http://127.0.0.1:8000"
+
+def check_system_status() -> dict:
+    base_url = get_working_api_url()
+    try:
+        resp = requests.get(f"{base_url}/api/agents/status", timeout=3)
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception:
+        pass
     return {"qdrant": "offline", "sql_db": "offline", "langfuse": "offline"}
 
 def poll_document_status(doc_id: str):
     placeholder = st.sidebar.empty()
+    base_url = get_working_api_url()
     while True:
         try:
-            resp = requests.get(f"{API_URL}/api/upload/{doc_id}/status", timeout=5)
+            resp = requests.get(f"{base_url}/api/upload/{doc_id}/status", timeout=5)
             if resp.status_code == 200:
                 data = resp.json()
                 status = data.get("status")
@@ -91,8 +109,9 @@ with st.sidebar:
     uploaded_file = st.file_uploader("Upload a financial PDF", type=["pdf"])
     if st.button("Process Document") and uploaded_file is not None:
         files = {"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")}
+        base_url = get_working_api_url()
         try:
-            res = requests.post(f"{API_URL}/api/upload", files=files)
+            res = requests.post(f"{base_url}/api/upload", files=files)
             if res.status_code == 200:
                 doc_id = res.json().get("document_id")
                 st.session_state.document_id = doc_id
@@ -127,7 +146,8 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                 "query": query_text,
                 "chat_history": st.session_state.messages[:-1]
             }
-            resp = requests.post(f"{API_URL}/api/query", json=payload, timeout=30)
+            base_url = get_working_api_url()
+            resp = requests.post(f"{base_url}/api/query", json=payload, timeout=30)
             if resp.status_code == 200:
                 data = resp.json()
                 st.session_state.messages.append(add_message("assistant", data.get("answer", "")))
