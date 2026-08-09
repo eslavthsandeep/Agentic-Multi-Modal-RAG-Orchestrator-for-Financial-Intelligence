@@ -1,11 +1,8 @@
-"""
-Main Streamlit application for OmniBrain.
-Provides a modern chat interface with multimodal document upload and agent trace visualization.
-"""
-
 import os
+import sys
 import time
 import requests
+import subprocess
 import streamlit as st
 
 from components.chat_ui import render_chat, add_message
@@ -13,6 +10,34 @@ from components.citation_viewer import render_citations
 from components.agent_trace_panel import render_trace
 
 API_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
+
+def _ensure_backend_running():
+    """Ensure FastAPI backend is running in background if not already active (e.g. on Streamlit Cloud)."""
+    try:
+        r = requests.get("http://127.0.0.1:8000/api/agents/status", timeout=1)
+        if r.status_code == 200:
+            return
+    except Exception:
+        pass
+    
+    backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend"))
+    if os.path.exists(backend_dir):
+        env = os.environ.copy()
+        python_path = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = f"{backend_dir}{os.pathsep}{python_path}"
+        try:
+            subprocess.Popen(
+                [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
+                cwd=backend_dir,
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            time.sleep(3)
+        except Exception:
+            pass
+
+_ensure_backend_running()
 
 st.set_page_config(
     page_title="OmniBrain",
