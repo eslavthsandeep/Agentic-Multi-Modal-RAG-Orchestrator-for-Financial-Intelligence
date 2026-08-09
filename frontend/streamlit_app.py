@@ -3,6 +3,7 @@ Main Streamlit application for OmniBrain.
 Provides a modern chat interface with multimodal document upload and agent trace visualization.
 """
 
+import os
 import time
 import requests
 import streamlit as st
@@ -11,7 +12,7 @@ from components.chat_ui import render_chat, add_message
 from components.citation_viewer import render_citations
 from components.agent_trace_panel import render_trace
 
-API_URL = "http://localhost:8000"
+API_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
 st.set_page_config(
     page_title="OmniBrain",
@@ -52,12 +53,14 @@ if "trace" not in st.session_state:
     st.session_state.trace = []
 
 def check_system_status() -> dict:
-    try:
-        resp = requests.get(f"{API_URL}/api/agents/status", timeout=2)
-        if resp.status_code == 200:
-            return resp.json()
-    except Exception:
-        pass
+    urls_to_try = [f"{API_URL}/api/agents/status", "http://127.0.0.1:8000/api/agents/status", "http://localhost:8000/api/agents/status"]
+    for url in urls_to_try:
+        try:
+            resp = requests.get(url, timeout=3)
+            if resp.status_code == 200:
+                return resp.json()
+        except Exception:
+            continue
     return {"qdrant": "offline", "sql_db": "offline", "langfuse": "offline"}
 
 def poll_document_status(doc_id: str):
