@@ -37,25 +37,50 @@ def _get_rails():
         logger.warning("Failed to load NeMo Guardrails config: %s", exc)
         return None
 
+def is_off_topic_heuristic(query: str) -> tuple[bool, str]:
+    """Fast deterministic heuristic to catch common off-topic queries."""
+    import re
+    q = query.strip().lower()
+
+    # Financial exceptions: if these are present, let it pass to financial reasoning
+    financial_keywords = [
+        "stock", "share", "shares", "price", "volume", "trading", "ticker", "aapl", "nasdaq",
+        "revenue", "sales", "net sales", "income", "profit", "margin", "gross margin", "tax",
+        "effective tax rate", "provision", "cash flow", "balance sheet", "10-k", "10-q", "filing",
+        "apple", "tim cook", "iphone", "mac", "ipad", "services", "wearables", "segment",
+        "antitrust", "doj", "lawsuit", "repurchase", "buyback", "dividend"
+    ]
+    has_strong_financial = any(re.search(rf"\b{k}\b", q) for k in financial_keywords)
+
+    # Patterns for off-topic categories
+    ml_pattern = r"\b(m[a-z]{3,8}\s*learn[a-z]*|deep\s*learn|neural\s*net|artificial\s*intel|nlp|llm|gpt|chatgpt|transformer|supervised|unsupervised|reinforcement\s*learn)\b"
+    politics_pattern = r"\b(pres[ie]dent\s*(of|in)?|prime\s*minister|white\s*house|congress|senat(or|e)|chancellor|governor\s+of|election\b)"
+    sports_pattern = r"\b(fifa|world\s*cup|cricket|football|soccer|basketball|nba|nfl|tennis|super\s*bowl|olympics|messi|ronaldo)\b"
+    trivia_pattern = r"\b(capital\s*of|weather\s*(in|today|tomorrow)|recipe|how\s*to\s*cook|cake|pizza|joke|poem|story|translate\s*to|horoscope|zodiac|actor|actress|movie)\b"
+    coding_pattern = r"\b(write\s*(a\s*)?(python|javascript|c\+\+|java|code|script|function)|sort\s*a\s*list|fibonacci|binary\s*search)\b"
+
+    if re.search(ml_pattern, q) and not has_strong_financial:
+        return True, "This question is outside the scope of financial document analysis. OmniBrain only answers questions regarding the uploaded financial filings and stock data."
+    if re.search(politics_pattern, q) and not has_strong_financial:
+        return True, "This question is outside the scope of financial document analysis. OmniBrain only answers questions regarding the uploaded financial filings and stock data."
+    if re.search(sports_pattern, q) and not has_strong_financial:
+        return True, "This question is outside the scope of financial document analysis. OmniBrain only answers questions regarding the uploaded financial filings and stock data."
+    if re.search(trivia_pattern, q) and not has_strong_financial:
+        return True, "This question is outside the scope of financial document analysis. OmniBrain only answers questions regarding the uploaded financial filings and stock data."
+    if re.search(coding_pattern, q) and not has_strong_financial:
+        return True, "This question is outside the scope of financial document analysis. OmniBrain only answers questions regarding the uploaded financial filings and stock data."
+
+    return False, ""
+
+
 async def check_input(query: str, document_context: str = "") -> dict:
     """Validate that a user query is on-topic for the uploaded document."""
-    q_clean = query.strip(' \t\n\r"\'').lower()
+    # 1. Fast deterministic heuristic check
+    is_off, reason = is_off_topic_heuristic(query)
+    if is_off:
+        return {"passed": False, "reason": reason}
 
-    # Fast heuristic check for obvious off-topic prompts
-    off_topic_patterns = [
-        "machine learning", "meachine learning", "deep learning", "neural network",
-        "python script", "write code", "sort a list", "recipe", "how to cook",
-        "tell me a joke", "write a poem", "who won", "movie recommendation",
-        "biology", "chemistry", "quantum physics", "weather in", "translate to",
-        "give the types", "what is machine learning", "what is meachine learning"
-    ]
-    for pattern in off_topic_patterns:
-        if pattern in q_clean:
-            return {
-                "passed": False,
-                "reason": "This question is outside the scope of financial document analysis. OmniBrain only answers questions regarding the uploaded financial filings and stock data."
-            }
-
+    # 2. NeMo Guardrails check (if installed)
     rails = _get_rails()
     if rails:
         try:
@@ -66,25 +91,27 @@ async def check_input(query: str, document_context: str = "") -> dict:
         except Exception as exc:
             logger.error("Input guardrail check failed: %s", exc)
 
-    # Use LLM for semantic validation if API key is present
+    # 3. Semantic LLM validation for any queries that passed heuristics
     try:
         from app.config import settings, get_openai_client
         if settings.effective_api_key:
             client = get_openai_client()
             val_prompt = (
-                "You are an input guardrail for a financial document QA system. "
+                "You are an input guardrail for OmniBrain, a financial document QA system for corporate SEC filings and stock data.\n"
                 "Determine if the user query is about financial reports, corporate filings, company business, executive management, or stock data.\n"
                 f"Query: \"{query}\"\n"
+                "If the query is about general computer science, AI/ML concepts, world leaders, sports, entertainment, cooking, general coding, or unrelated trivia, answer OFF_TOPIC.\n"
+                "If the query is about company performance, financials, accounting, SEC filings, or stock markets, answer ON_TOPIC.\n"
                 "Answer ONLY with 'ON_TOPIC' or 'OFF_TOPIC'."
             )
             res = client.chat.completions.create(
                 model=settings.effective_llm_model,
                 messages=[{"role": "user", "content": val_prompt}],
-                max_tokens=5,
+                max_tokens=25,
                 temperature=0.0
             )
             decision = (res.choices[0].message.content or "").strip().upper()
-            if "OFF_TOPIC" in decision:
+            if "OFF" in decision or "NOT" in decision:
                 return {
                     "passed": False,
                     "reason": "This question is outside the scope of financial document analysis. OmniBrain only answers questions regarding the uploaded financial filings and stock data."

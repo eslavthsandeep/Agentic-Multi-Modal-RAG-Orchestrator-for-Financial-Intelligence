@@ -98,9 +98,14 @@ def _call_gpt(messages: list[dict], response_format: dict | None = None) -> str:
         user_content_lower = user_prompt.lower()
 
         if response_format and response_format.get("type") == "json_object":
+            from app.guardrails.guard import is_off_topic_heuristic
+            is_off, off_reason = is_off_topic_heuristic(user_content_lower)
+            if is_off:
+                return json.dumps({"route": "end", "reasoning": f"Off-topic query detected ({off_reason})"})
+
             is_coding = any(k in user_content_lower for k in ["python", "script", "sort a list", "write code", "function", "program", "cook"])
             has_market = any(k in user_content_lower for k in ["average closing price", "closing price", "trading volume", "peak volume", "stock history", "seeded data"])
-            has_doc = any(k in user_content_lower for k in ["sales", "revenue", "income", "tax", "report", "filing", "10-k", "sustainability", "risk", "total", "net sales", "compare", "repurchase", "repurchases", "gross margin", "lawsuit", "doj", "segment"])
+            has_doc = any(k in user_content_lower for k in ["sales", "revenue", "income", "tax", "report", "filing", "10-k", "sustainability", "risk", "total", "net sales", "compare", "repurchase", "repurchases", "gross margin", "lawsuit", "doj", "segment", "apple", "iphone", "ipad", "mac", "services", "wearables"])
             has_vision = any(k in user_content_lower for k in ["chart", "graph", "figure", "table", "visual", "diagram"])
             
             if is_coding:
@@ -111,8 +116,10 @@ def _call_gpt(messages: list[dict], response_format: dict | None = None) -> str:
                 return json.dumps({"route": "sql", "reasoning": "Financial market data query detected (Fallback Router)"})
             elif has_vision:
                 return json.dumps({"route": "vision", "reasoning": "Visual chart/table query detected (Fallback Router)"})
-            else:
+            elif has_doc:
                 return json.dumps({"route": "search", "reasoning": "Document text retrieval query detected (Fallback Router)"})
+            else:
+                return json.dumps({"route": "end", "reasoning": "Unrecognized or off-topic request routed to end"})
 
         # Synthesis fallback with explicit domain synthesis for all query types
         if "Context:" in user_prompt and "Question:" in user_prompt:
@@ -121,9 +128,14 @@ def _call_gpt(messages: list[dict], response_format: dict | None = None) -> str:
             ctx_part = parts[0].replace("Context:", "").strip()
             q_lower = question_text.lower()
 
-            # Handle off-topic coding requests first
+            # Handle off-topic queries first
+            from app.guardrails.guard import is_off_topic_heuristic
+            is_off, off_reason = is_off_topic_heuristic(q_lower)
+            if is_off:
+                return off_reason
+
             if any(k in q_lower for k in ["python", "script", "sort a list", "write code", "cook"]):
-                return "This question is outside the scope of the uploaded financial document. I can only answer questions about the content of the uploaded PDF and the seeded stock data."
+                return "This question is outside the scope of financial document analysis. OmniBrain only answers questions regarding the uploaded financial filings and stock data."
 
             # Handle unanswerable / missing context queries cleanly
             if any(k in q_lower for k in ["2030", "fiscal 2030", "metaverse", "marketing budget"]):
@@ -291,7 +303,16 @@ def _call_gpt(messages: list[dict], response_format: dict | None = None) -> str:
                     f"*(Calculated & Synthesized via OmniBrain SQL Agent)*"
                 )
 
-            # General text synthesis helper: extract and format non-empty content lines
+            # General text synthesis helper: only output if query has financial intent!
+            financial_terms = [
+                "sales", "revenue", "income", "tax", "report", "filing", "10-k", "sustainability",
+                "risk", "apple", "profit", "margin", "lawsuit", "litigation", "share", "stock",
+                "cash", "segment", "repurchase", "product", "growth", "performance", "antitrust",
+                "legal", "earnings", "dividend", "equity", "debt", "asset", "liability", "audit"
+            ]
+            if not any(term in q_lower for term in financial_terms):
+                return "This question is outside the scope of financial document analysis. OmniBrain only answers questions regarding the uploaded financial filings and stock data."
+
             lines = [line.strip() for line in ctx_part.split("\n") if line.strip() and not line.strip().startswith("[Page")]
             if not lines or "No context was retrieved" in ctx_part:
                 return "I couldn't find information about this in the uploaded document — this data may not be covered in the filing, or may not exist for a future period like fiscal 2030."
@@ -479,11 +500,15 @@ async def run_query(
         from app.guardrails.guard import check_input
         guard_result = await check_input(query)
         if not guard_result["passed"]:
+            block_msg = guard_result.get(
+                "reason",
+                "This question is outside the scope of financial document analysis. OmniBrain only answers questions regarding the uploaded financial filings and stock data."
+            )
             return {
-                "answer": f"This question was blocked by guardrails: {guard_result.get('reason', 'off-topic')}",
-                "route_taken": [],
+                "answer": block_msg,
+                "route_taken": ["guardrails"],
                 "citations": [],
-                "agent_trace": [{"step": "guardrails", "detail": guard_result.get("reason", "")}],
+                "agent_trace": [{"step": "guardrails", "detail": f"Blocked: {block_msg}"}],
                 "guardrail_status": "blocked",
             }
     except Exception as exc:
