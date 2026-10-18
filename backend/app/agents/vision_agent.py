@@ -43,8 +43,9 @@ def run_vision(state: AgentState) -> Command:
             logger.warning("Direct Qdrant image lookup failed: %s", q_err)
 
     try:
-        if images and settings.OPENAI_API_KEY:
-            client = openai.Client(api_key=settings.OPENAI_API_KEY)
+        if images and settings.effective_api_key:
+            from app.config import get_openai_client
+            client = get_openai_client()
             
             for img in images:
                 image_path = img.get("image_path")
@@ -69,7 +70,7 @@ def run_vision(state: AgentState) -> Command:
                     ]
                     
                     response = client.chat.completions.create(
-                        model=settings.LLM_MODEL,
+                        model=settings.effective_llm_model,
                         messages=messages
                     )
                     

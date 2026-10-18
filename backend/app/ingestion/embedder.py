@@ -64,21 +64,26 @@ def _generate_synthetic_vector(text: str, dim: int = 1536) -> list[float]:
     return [x / norm for x in raw]
 
 def embed_texts(texts: list[str]) -> list[list[float]]:
-    """Embed texts using OpenAI's text-embedding-3-small, with synthetic fallback if quota is exceeded."""
-    if not settings.OPENAI_API_KEY:
-        logger.warning("No OpenAI API key provided — using synthetic embeddings")
+    """Embed texts using OpenAI's text-embedding-3-small or Gemini gemini-embedding-001, with synthetic fallback."""
+    if not settings.effective_api_key:
+        logger.warning("No API key provided — using synthetic embeddings")
         return [_generate_synthetic_vector(t) for t in texts]
 
-    client = OpenAI(api_key=settings.OPENAI_API_KEY, max_retries=0)
+    from app.config import get_openai_client
+    client = get_openai_client()
     embeddings = []
     
-    batch_size = 100
+    batch_size = 50 if settings.is_gemini else 100
     for i in range(0, len(texts), batch_size):
         batch = texts[i:i+batch_size]
         try:
+            extra_params = {}
+            if settings.is_gemini:
+                extra_params["dimensions"] = 1536
             response = client.embeddings.create(
                 input=batch,
-                model=settings.EMBEDDING_MODEL
+                model=settings.effective_embedding_model,
+                **extra_params
             )
             batch_embeddings = [data.embedding for data in response.data]
             embeddings.extend(batch_embeddings)

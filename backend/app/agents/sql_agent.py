@@ -47,7 +47,7 @@ def run_sql(state: AgentState) -> Command:
         schema = get_table_schema()
         valid_sql = ""
         
-        if settings.OPENAI_API_KEY:
+        if settings.effective_api_key:
             try:
                 prompt = f"""Generate a SQL query for the following request, based strictly on the provided schema.
 Return only valid SQL, with no markdown formatting.
@@ -56,9 +56,10 @@ Schema:
 {schema}
 
 Query: {query}"""
-                client = openai.Client(api_key=settings.OPENAI_API_KEY)
+                from app.config import get_openai_client
+                client = get_openai_client()
                 response = client.chat.completions.create(
-                    model=settings.LLM_MODEL,
+                    model=settings.effective_llm_model,
                     messages=[{"role": "user", "content": prompt}]
                 )
                 raw_sql = response.choices[0].message.content or ""

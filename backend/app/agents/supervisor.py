@@ -59,8 +59,9 @@ def _call_gpt(messages: list[dict], response_format: dict | None = None) -> str:
     user_prompt = next((str(m.get("content", "")) for m in messages if m.get("role") == "user"), "")
     
     try:
-        client = openai.OpenAI(api_key=settings.OPENAI_API_KEY, max_retries=0)
-        kwargs = {"model": settings.LLM_MODEL, "messages": messages}
+        from app.config import get_openai_client
+        client = get_openai_client()
+        kwargs = {"model": settings.effective_llm_model, "messages": messages}
         if response_format:
             kwargs["response_format"] = response_format
             
@@ -72,7 +73,7 @@ def _call_gpt(messages: list[dict], response_format: dict | None = None) -> str:
         logger.info("SYNTHESIZER RAW LLM RESPONSE RECEIVED:\n%s\n---------------------------------------", raw_out)
         return raw_out
     except Exception as exc:
-        logger.warning(f"OpenAI API call failed ({exc}). Using Intelligent Fallback Engine.")
+        logger.warning(f"LLM API call failed ({exc}). Using Intelligent Fallback Engine.")
         user_content_lower = user_prompt.lower()
 
         if response_format and response_format.get("type") == "json_object":

@@ -94,11 +94,12 @@ def run_search(state: AgentState) -> Command:
         if max_score < settings.RELEVANCE_THRESHOLD and state.get("self_correction_attempts", 0) < settings.MAX_CORRECTION_ATTEMPTS:
             logger.info("Search relevance %.2f below threshold %.2f, attempting correction", max_score, settings.RELEVANCE_THRESHOLD)
             try:
-                client = openai.Client(api_key=settings.OPENAI_API_KEY)
+                from app.config import get_openai_client
+                client = get_openai_client()
                 rewrite_prompt = f"Rewrite this query to be more specific for financial document search: {query}"
                 
                 response = client.chat.completions.create(
-                    model=settings.LLM_MODEL,
+                    model=settings.effective_llm_model,
                     messages=[{"role": "user", "content": rewrite_prompt}]
                 )
                 
