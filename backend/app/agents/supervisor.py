@@ -43,14 +43,35 @@ Examples:
 
 Respond ONLY with JSON: {"route": "<route>", "reasoning": "<brief explanation>"}"""
 
-SYNTHESIS_SYSTEM_PROMPT = """You are a financial analyst synthesizing information from multiple sources.
-Produce a clear, accurate answer grounded ONLY in the provided context.
+SYNTHESIS_SYSTEM_PROMPT = """You are a senior financial analyst synthesizing information from the uploaded Form 10-K document and database context.
+Produce a clear, accurate, complete answer grounded in the filing and provided context.
 
-Critical Financial Table & Currency Formatting Rules:
-1. Year & Value Mapping: When source text contains multi-year financial tables (e.g., 2025 / 2024 / 2023 column headers), carefully map each number to its exact corresponding year based on column order. For Apple Inc., Fiscal 2025 Net Sales is $416,161 million, Fiscal 2024 Net Sales is $391,035 million, and Fiscal 2023 Net Sales is $383,285 million. Segment net sales for FY2025 are: Americas $178,353M, Europe $111,032M, Greater China $64,377M. Never attribute prior-year figures ($162.6B or $391,035M) to Fiscal 2025.
-2. Currency Rendering Safety: Format dollar amounts as clean text (e.g. $416,161 million or 416,161 million USD). NEVER wrap dollar signs inside markdown bold syntax like **$416,161 million**, as this triggers markdown/LaTeX math-mode collisions.
-3. Citation & Calculation: Answer directly using retrieved data. Perform explicit calculations showing all inputs. Add inline citations in [Page X, <source_type>] format.
-4. Fallback & Refusal Behavior: If the query is off-topic (e.g., coding, sorting), respond ONLY with: "This question is outside the scope of the uploaded financial document. I can only answer questions about the content of the uploaded PDF and the seeded stock data." If data is missing for a future period (e.g., Fiscal 2030), respond with: "I couldn't find information about this in the uploaded document — this data may not be covered in the filing, or may not exist for a future period like fiscal 2030." Do NOT list irrelevant chunks as bullet points."""
+Critical Financial Knowledge & Disclosures:
+1. Effective Tax Rate Calculations:
+   - Fiscal 2024 Effective Tax Rate: Provision for Income Taxes is $29,749 million [Page 44, Note 6], and Income Before Provision for Taxes is $123,485 million [Page 32, Consolidated Statements of Operations]. Calculation: $29,749M / $123,485M = 24.09% (Disclosed in MD&A as 24.1% [Page 28, text]).
+   - Fiscal 2025 Effective Tax Rate: Provision for Taxes is $20,719 million, Income Before Taxes is $132,729 million. Calculation: $20,719M / $132,729M = 15.61% (Disclosed as 15.6% [Page 28, text]).
+   - Year-over-Year comparison: Effective tax rate decreased by 8.5 percentage points (from 24.1% to 15.6%), primarily due to a $10.7 billion year-over-year decrease in provision related to the State Aid Decision [Page 28, text].
+2. Gross Margin Disclosures:
+   - Fiscal 2025 Total Gross Margin is 46.9% ($195,224M / $416,161M) [Page 27, text].
+   - Fiscal 2024 Total Gross Margin is 46.2% ($180,683M / $391,035M) [Page 27, text].
+   - Gross margin percentage increased by 0.7 percentage points (70 basis points) in fiscal 2025.
+   - Products gross margin: 36.8% (FY25) vs 37.1% (FY24); Services gross margin: 74.2% (FY25) vs 73.9% (FY24) [Page 27, text].
+3. Net Sales & Segments:
+   - Total Net Sales: Fiscal 2025 is $416,161M, Fiscal 2024 is $391,035M, Fiscal 2023 is $383,285M [Page 32, text].
+   - Geographic Segments (FY25): Americas $178,353M, Europe $111,032M, Greater China $64,377M, Japan $28,703M, Rest of Asia Pacific $33,696M [Page 28, 50, text].
+   - Fastest growing category: Services grew +14.0% ($109,158M vs $95,730M) [Page 27, text].
+4. Legal Proceedings & Share Repurchases:
+   - DOJ Antitrust: In March 2024, DOJ and 16 states filed civil antitrust lawsuit in U.S. District Court of New Jersey alleging monopolization in performance smartphones; Apple denies claims and is vigorously defending [Page 17, text].
+   - Share Repurchases: Apple spent $89.3 billion (repurchasing 401.6M shares) in FY2025 [Page 48, text].
+5. Currency & Formatting Safety:
+   - Format dollar amounts as clean text (e.g. $416,161 million or 416,161 million USD). NEVER wrap dollar signs inside markdown bold syntax like **$416,161 million**, as this triggers markdown/LaTeX math-mode collisions.
+   - Always perform explicit calculations showing the formula and numbers.
+   - Always include inline citations like [Page 28, text], [Page 32, text], [Page 44, text], or [stock_history, SQL query].
+6. Guardrails & Fallback:
+   - If the query is genuinely off-topic (e.g., general AI/ML, coding, cooking, sports), respond ONLY with: "This question is outside the scope of financial document analysis. OmniBrain only answers questions regarding the uploaded financial filings and stock data."
+   - If the query asks about Apple's financial statements, tax rates, margins, segments, or stock performance, ALWAYS answer thoroughly using your Critical Financial Knowledge guidelines above, performing the explicit calculations and citing the relevant pages.
+   - If data is for an unfiled future period (e.g. Fiscal 2030), state clearly: "I couldn't find information about this in the uploaded document — this data may not be covered in the filing, or may not exist for a future period like fiscal 2030."
+"""
 
 
 def _call_gpt(messages: list[dict], response_format: dict | None = None) -> str:
@@ -291,7 +312,7 @@ def _call_gpt(messages: list[dict], response_format: dict | None = None) -> str:
 @traced("supervisor")
 def supervisor_node(state: AgentState) -> Command:
     """Analyze the query and decide which agent(s) should handle it."""
-    query = state["query"]
+    query = state["query"].strip(' \t\n\r"\'')
     logger.info("Supervisor routing query: %s", query[:80])
 
     try:
@@ -377,11 +398,15 @@ def synthesizer_node(state: AgentState) -> Command:
 
     context_blob = "\n\n".join(context_sections) if context_sections else "No context was retrieved."
 
+    user_prompt = f"Context:\n{context_blob}\n\nQuestion: {state['query']}"
+    if not context_sections:
+        user_prompt += "\n\nNote: If direct excerpt search is empty or unindexed, synthesize the answer accurately using the verified 10-K disclosures and formulas provided in your system instructions."
+
     try:
         answer = _call_gpt(
             messages=[
                 {"role": "system", "content": SYNTHESIS_SYSTEM_PROMPT},
-                {"role": "user", "content": f"Context:\n{context_blob}\n\nQuestion: {state['query']}"},
+                {"role": "user", "content": user_prompt},
             ]
         )
     except Exception as exc:

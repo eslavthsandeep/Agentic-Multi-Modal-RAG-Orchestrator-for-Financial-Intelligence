@@ -22,7 +22,16 @@ def _validate_sql(sql: str) -> str:
     Even though the LLM should only generate SELECTs, defense in depth
     means we never trust unvalidated input from any source.
     """
-    cleaned = sql.strip().split(';')[0].strip()
+    cleaned = sql.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.split("\n")
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+        
+    cleaned = cleaned.split(';')[0].strip()
     
     forbidden = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'ALTER', 'CREATE', 'TRUNCATE']
     upper = cleaned.upper()
@@ -68,13 +77,17 @@ Query: {query}"""
                 logger.warning("LLM SQL generation failed (%s) — using fallback AAPL stock query.", llm_err)
 
         if not valid_sql:
+            import re
             q_lower = query.lower()
+            year_match = re.search(r'\b(20\d\d)\b', q_lower)
+            year_filter = f" WHERE date LIKE '{year_match.group(1)}%'" if year_match else ""
             if any(k in q_lower for k in ["avg", "average", "mean"]):
-                valid_sql = "SELECT AVG(close_price) AS avg_close_price FROM stock_history;"
+                valid_sql = f"SELECT AVG(close_price) AS avg_close_price FROM stock_history{year_filter};"
             elif any(k in q_lower for k in ["volume", "highest", "max", "peak"]):
-                valid_sql = "SELECT date, close_price, volume FROM stock_history ORDER BY volume DESC LIMIT 1;"
+                valid_sql = f"SELECT date, close_price, volume FROM stock_history{year_filter} ORDER BY volume DESC LIMIT 1;"
             else:
-                valid_sql = "SELECT date, close_price, volume FROM stock_history WHERE ticker = 'AAPL' ORDER BY date DESC LIMIT 10;"
+                ticker_clause = f" WHERE ticker = 'AAPL' AND date LIKE '{year_match.group(1)}%'" if year_match else " WHERE ticker = 'AAPL'"
+                valid_sql = f"SELECT date, close_price, volume FROM stock_history{ticker_clause} ORDER BY date DESC LIMIT 10;"
         
         logger.info("Executing valid SQL: %s", valid_sql)
         sql_result = execute_query(valid_sql)

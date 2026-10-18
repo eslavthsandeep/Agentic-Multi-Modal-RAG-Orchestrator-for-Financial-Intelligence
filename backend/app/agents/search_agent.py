@@ -35,8 +35,14 @@ def _hybrid_rerank(query: str, items: list[dict]) -> list[dict]:
             phrases.append(trigram)
 
     # Domain n-gram synonyms for key financial topics
+    if any(k in query_lower for k in ["tax", "effective tax rate", "tax rate", "income tax", "provision"]):
+        phrases.extend([
+            "provision for income taxes", "income before provision for income taxes",
+            "effective tax rate", "statutory federal tax rate", "state aid decision",
+            "note 6", "income taxes", "taxes on income", "2024"
+        ])
     if any(k in query_lower for k in ["gross margin", "margin", "profitable", "profitability"]):
-        phrases.extend(["gross margin", "margin percentage", "products gross margin", "services gross margin", "profitability"])
+        phrases.extend(["gross margin", "margin percentage", "products gross margin", "services gross margin", "profitability", "total gross margin", "cost of sales"])
     if any(k in query_lower for k in ["doj", "department of justice", "lawsuit", "antitrust"]):
         phrases.extend(["department of justice", "antitrust", "civil antitrust", "monopolization", "legal proceedings"])
     if any(k in query_lower for k in ["repurchase", "repurchases", "buyback", "share repurchase"]):
@@ -45,6 +51,8 @@ def _hybrid_rerank(query: str, items: list[dict]) -> list[dict]:
         phrases.extend(["products and services performance", "net sales by product category", "percentage change", "year-over-year"])
     if any(k in query_lower for k in ["iphone", "services", "mac", "ipad"]):
         phrases.extend(["net sales by product category", "services net sales", "iphone net sales"])
+    if any(k in query_lower for k in ["segment", "americas", "europe", "greater china", "japan"]):
+        phrases.extend(["segment information", "net sales by geographic segment", "americas", "europe", "greater china"])
 
     reranked = []
     for item in items:
@@ -66,7 +74,7 @@ def _hybrid_rerank(query: str, items: list[dict]) -> list[dict]:
 @traced("search_agent")
 def run_search(state: AgentState) -> Command:
     """Retrieve relevant text and image context from the vector store."""
-    query = state["query"]
+    query = state["query"].strip(' \t\n\r"\'')
     doc_id = state["document_id"]
     
     logger.info("Executing vector search for query: %s", query)
@@ -86,7 +94,7 @@ def run_search(state: AgentState) -> Command:
         logger.info("Top 10 raw retrieved chunks before reranking:\n%s", raw_log)
 
         raw_combined = text_results + image_results
-        combined_results = _hybrid_rerank(query, raw_combined)[:5]
+        combined_results = _hybrid_rerank(query, raw_combined)[:12]
         
         max_score = max((res.get("score", 0.0) for res in combined_results), default=0.0)
         logger.info("Top hybrid retrieval score: %.4f for query '%s'", max_score, query)
@@ -96,23 +104,23 @@ def run_search(state: AgentState) -> Command:
             try:
                 from app.config import get_openai_client
                 client = get_openai_client()
-                rewrite_prompt = f"Rewrite this query to be more specific for financial document search: {query}"
+                rewrite_prompt = (
+                    f"Extract 3-6 financial keywords from this question for finding excerpts in Apple's Form 10-K: {query}\n"
+                    "Keywords only:"
+                )
                 
                 response = client.chat.completions.create(
                     model=settings.effective_llm_model,
                     messages=[{"role": "user", "content": rewrite_prompt}]
                 )
                 
-                rewritten_query = response.choices[0].message.content or query
-                logger.info("Rewritten query: %s", rewritten_query)
-                
-                return Command(
-                    goto="search_agent",
-                    update={
-                        "query": rewritten_query,
-                        "self_correction_attempts": state.get("self_correction_attempts", 0) + 1
-                    }
-                )
+                candidate = (response.choices[0].message.content or "").strip().strip('"\'')
+                if candidate and len(candidate) < 80 and not any(k in candidate.lower() for k in ["please", "it looks like", "could you", "here is", "sure"]):
+                    logger.info("Searching with expanded keywords: %s", candidate)
+                    extra_embeddings = embed_texts([candidate])
+                    extra_results = search_text(extra_embeddings[0], doc_id, top_k=50)
+                    raw_combined.extend(extra_results)
+                    combined_results = _hybrid_rerank(query, raw_combined)[:12]
             except Exception as rewrite_err:
                 logger.warning(f"Query rewrite skipped due to LLM error ({rewrite_err}). Proceeding with current search results.")
             

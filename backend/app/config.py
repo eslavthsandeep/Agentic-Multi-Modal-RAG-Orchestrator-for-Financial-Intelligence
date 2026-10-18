@@ -64,8 +64,8 @@ class Settings(BaseSettings):
 
     @property
     def effective_llm_model(self) -> str:
-        if self.is_gemini and (not self.LLM_MODEL or self.LLM_MODEL in ("gpt-4o", "gpt-4o-mini")):
-            return "gemini-3.8-flash"
+        if self.is_gemini and (not self.LLM_MODEL or self.LLM_MODEL in ("gpt-4o", "gpt-4o-mini", "gemini-3.8-flash")):
+            return "gemini-3.5-flash-lite"
         return self.LLM_MODEL
 
     @property
