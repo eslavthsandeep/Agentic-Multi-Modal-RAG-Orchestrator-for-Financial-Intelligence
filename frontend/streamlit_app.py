@@ -5,6 +5,14 @@ import requests
 import asyncio
 import streamlit as st
 
+# Synchronize Streamlit Secrets to os.environ for Streamlit Cloud
+try:
+    for key, value in st.secrets.items():
+        if isinstance(value, str) and key not in os.environ:
+            os.environ[key] = value
+except Exception:
+    pass
+
 # Ensure backend and root directories are in sys.path for direct Python execution on Streamlit Cloud
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 backend_dir = os.path.abspath(os.path.join(root_dir, "backend"))

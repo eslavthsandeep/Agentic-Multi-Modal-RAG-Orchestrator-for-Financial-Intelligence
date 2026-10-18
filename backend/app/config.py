@@ -34,11 +34,20 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"
         
     def ensure_directories(self) -> None:
         """Create required application directories."""
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.EXTRACTED_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
+
+try:
+    import streamlit as st
+    for _k, _v in getattr(st, "secrets", {}).items():
+        if isinstance(_v, str) and _k not in os.environ:
+            os.environ[_k] = _v
+except Exception:
+    pass
 
 settings = Settings()
