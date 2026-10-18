@@ -189,37 +189,57 @@ if query := st.chat_input("Ask a question about the document..."):
 if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
     query_text = st.session_state.messages[-1]["content"]
     with st.spinner("Thinking..."):
-        base_url = get_working_api_url()
-        handled = False
-        if base_url:
-            try:
-                payload = {
-                    "document_id": st.session_state.document_id or "",
-                    "query": query_text,
-                    "chat_history": st.session_state.messages[:-1]
-                }
-                resp = requests.post(f"{base_url}/api/query", json=payload, timeout=30)
-                if resp.status_code == 200:
-                    data = resp.json()
+        # 1. Direct Guardrail Validation (Heuristic + Semantic check)
+        blocked = False
+        try:
+            from app.guardrails.guard import check_input
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            guard_res = loop.run_until_complete(check_input(query_text))
+            if not guard_res.get("passed", True):
+                block_reason = guard_res.get(
+                    "reason",
+                    "This question is outside the scope of financial document analysis. OmniBrain only answers questions regarding the uploaded financial filings and stock data."
+                )
+                st.session_state.messages.append(add_message("assistant", block_reason))
+                st.session_state.citations = []
+                st.session_state.trace = [{"step": "guardrails", "detail": f"Blocked: {block_reason}"}]
+                blocked = True
+        except Exception as ge:
+            pass
+
+        if not blocked:
+            base_url = get_working_api_url()
+            handled = False
+            if base_url:
+                try:
+                    payload = {
+                        "document_id": st.session_state.document_id or "",
+                        "query": query_text,
+                        "chat_history": st.session_state.messages[:-1]
+                    }
+                    resp = requests.post(f"{base_url}/api/query", json=payload, timeout=30)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        st.session_state.messages.append(add_message("assistant", data.get("answer", "")))
+                        st.session_state.citations = data.get("citations", [])
+                        st.session_state.trace = data.get("agent_trace", [])
+                        handled = True
+                except Exception:
+                    pass
+            
+            if not handled:
+                # Direct in-process query execution
+                try:
+                    from app.agents.supervisor import run_query
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    data = loop.run_until_complete(run_query(query_text, st.session_state.document_id or "test_doc"))
                     st.session_state.messages.append(add_message("assistant", data.get("answer", "")))
                     st.session_state.citations = data.get("citations", [])
                     st.session_state.trace = data.get("agent_trace", [])
-                    handled = True
-            except Exception:
-                pass
-        
-        if not handled:
-            # Direct in-process query execution
-            try:
-                from app.agents.supervisor import run_query
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                data = loop.run_until_complete(run_query(query_text, st.session_state.document_id or "test_doc"))
-                st.session_state.messages.append(add_message("assistant", data.get("answer", "")))
-                st.session_state.citations = data.get("citations", [])
-                st.session_state.trace = data.get("agent_trace", [])
-            except Exception as e:
-                st.session_state.messages.append(add_message("assistant", f"Analysis error: {e}"))
+                except Exception as e:
+                    st.session_state.messages.append(add_message("assistant", f"Analysis error: {e}"))
     st.rerun()
 
 if st.session_state.trace:
