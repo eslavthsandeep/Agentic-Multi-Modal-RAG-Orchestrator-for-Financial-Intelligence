@@ -19,6 +19,23 @@ def get_connection() -> sqlite3.Connection:
         db_path = db_url
 
     path_obj = Path(db_path)
+    if not path_obj.exists() or path_obj.stat().st_size == 0:
+        candidates = [
+            Path(__file__).resolve().parent.parent.parent / "data" / "stock.db",
+            Path("backend/data/stock.db"),
+            Path("../backend/data/stock.db"),
+        ]
+        for alt_path in candidates:
+            if alt_path.resolve() != path_obj.resolve() and alt_path.exists() and alt_path.stat().st_size > 0:
+                import shutil
+                path_obj.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    shutil.copyfile(alt_path, path_obj)
+                    break
+                except Exception:
+                    path_obj = alt_path
+                    break
+
     path_obj.parent.mkdir(parents=True, exist_ok=True)
         
     conn = sqlite3.connect(str(path_obj))

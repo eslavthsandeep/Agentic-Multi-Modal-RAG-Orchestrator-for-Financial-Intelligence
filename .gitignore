@@ -10,6 +10,8 @@ venv/
 ENV/
 
 # Data & Databases
+data/
+*.pdf
 backend/data/stock.db
 backend/data/qdrant_db/
 backend/data/uploads/

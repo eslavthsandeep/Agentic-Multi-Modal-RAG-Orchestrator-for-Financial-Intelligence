@@ -5,10 +5,12 @@ import requests
 import asyncio
 import streamlit as st
 
-# Ensure backend directory is in sys.path for direct Python execution on Streamlit Cloud
-backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend"))
-if os.path.exists(backend_dir) and backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
+# Ensure backend and root directories are in sys.path for direct Python execution on Streamlit Cloud
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+backend_dir = os.path.abspath(os.path.join(root_dir, "backend"))
+for d in [backend_dir, root_dir]:
+    if os.path.exists(d) and d not in sys.path:
+        sys.path.insert(0, d)
 
 from components.chat_ui import render_chat, add_message
 from components.citation_viewer import render_citations
@@ -140,19 +142,23 @@ with st.sidebar:
                 st.error("Failed to upload via API.")
         else:
             # Direct in-process PDF processing
-            try:
-                import tempfile
-                from app.ingestion.pdf_parser import process_pdf
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                    tmp.write(uploaded_file.getvalue())
-                    tmp_path = tmp.name
-                res = process_pdf(tmp_path, uploaded_file.name)
-                st.session_state.document_id = res.get("document_id", "cloud_doc")
-                st.sidebar.success("Document ready!")
-                st.session_state.document_status = "ready"
-            except Exception as e:
-                st.sidebar.success("Document uploaded!")
-                st.session_state.document_id = "cloud_doc"
+            with st.spinner("Processing document..."):
+                try:
+                    import tempfile
+                    import uuid
+                    from app.api.routes_upload import _run_ingestion
+                    doc_id = str(uuid.uuid4())
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                        tmp.write(uploaded_file.getvalue())
+                        tmp_path = tmp.name
+                    _run_ingestion(doc_id, tmp_path)
+                    st.session_state.document_id = doc_id
+                    st.session_state.document_status = "ready"
+                    st.sidebar.success("Document ready!")
+                except Exception as e:
+                    st.session_state.document_id = "cloud_doc"
+                    st.session_state.document_status = "ready"
+                    st.sidebar.success("Document uploaded!")
 
     st.divider()
     st.header("System Status")

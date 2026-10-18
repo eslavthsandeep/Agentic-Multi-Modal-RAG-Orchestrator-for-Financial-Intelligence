@@ -17,10 +17,19 @@ import logging
 from pathlib import Path
 from typing import Any
 
-import torch
-import torch.nn.functional as F
+try:
+    import torch
+    import torch.nn.functional as F
+    from transformers import CLIPModel, CLIPProcessor
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    F = None
+    CLIPModel = None
+    CLIPProcessor = None
+    TORCH_AVAILABLE = False
+
 from PIL import Image
-from transformers import CLIPModel, CLIPProcessor
 from openai import OpenAI
 
 from app.config import settings
@@ -34,6 +43,8 @@ CLIP_MODEL_ID = "openai/clip-vit-base-patch32"
 
 def _load_clip() -> tuple[Any, Any]:
     global _clip_model, _clip_processor
+    if not TORCH_AVAILABLE:
+        raise RuntimeError("torch and transformers are not installed in this environment")
     if _clip_model is None:
         logger.info(f"Loading CLIP model {CLIP_MODEL_ID} (first call, ~600MB download)")
         _clip_model = CLIPModel.from_pretrained(CLIP_MODEL_ID)
