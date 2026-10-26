@@ -437,11 +437,28 @@ def synthesizer_node(state: AgentState) -> Command:
     logger.info("SYNTHESIZER EXIT — Produced final_answer (%d chars):\n%s", len(answer), answer)
     trace_step = {"step": "synthesizer", "detail": f"Produced answer from {len(context_sections)} context blocks"}
 
+    # Filter citations to only those actually referenced in the synthesized answer to maximize precision
+    import re
+    referenced_pages = {int(p) for p in re.findall(r'\[Page\s*(\d+)', answer, re.IGNORECASE)}
+    referenced_sql = bool(re.search(r'\[SQL\s*query', answer, re.IGNORECASE) or "stock_history" in answer.lower())
+
+    filtered_citations = []
+    seen_pages = set()
+    for c in citations:
+        if c.get("source_type") == "sql_query" and referenced_sql:
+            filtered_citations.append(c)
+        elif c.get("page") in referenced_pages and c.get("page") not in seen_pages:
+            seen_pages.add(c.get("page"))
+            filtered_citations.append(c)
+
+    if not filtered_citations:
+        filtered_citations = citations[:3]
+
     return Command(
         goto=END,
         update={
             "final_answer": answer,
-            "citations": citations,
+            "citations": filtered_citations,
             "agent_trace": state.get("agent_trace", []) + [trace_step],
         },
     )

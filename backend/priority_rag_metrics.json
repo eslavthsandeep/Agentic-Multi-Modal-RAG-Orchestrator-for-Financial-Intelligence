@@ -1,0 +1,14 @@
+{
+  "recall_at_1": 0.5,
+  "recall_at_3": 0.8,
+  "recall_at_5": 0.8,
+  "recall_at_10": 0.9,
+  "mrr": 0.6667,
+  "ndcg_at_3": 0.5368,
+  "ndcg_at_5": 0.555,
+  "ndcg_at_10": 0.5768,
+  "faithfulness": 0.8517,
+  "answer_correctness": 0.975,
+  "citation_precision": 0.6333,
+  "citation_recall": 0.5
+}
